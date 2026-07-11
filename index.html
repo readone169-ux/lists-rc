@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microsoft Lists</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <style>
+        :root {
+            --bg-body: #faf9f8; --bg-white: #fff; --bg-sidebar: #f3f2f1; --border: #e1dfdd;
+            --text-primary: #1b1a19; --text-secondary: #605e5c; --accent: #0078d4;
+            --accent-hover: #106ebe; --accent-light: #deecf9; --radius-sm: 4px; --radius-md: 6px;
+            --radius-lg: 8px; --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+            --sidebar-width: 260px; --panel-width: 460px;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:var(--font); font-size:14px; color:var(--text-primary); background:var(--bg-body); display:flex; height:100vh; overflow:hidden; }
+        /* Sidebar */
+        .sidebar { width:var(--sidebar-width); min-width:var(--sidebar-width); background:var(--bg-sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; z-index:10; }
+        .sidebar-header { padding:16px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--border); }
+        .sidebar-logo { width:28px; height:28px; background:#6b2fa0; border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-weight:700; }
+        .sidebar-title { font-weight:600; font-size:16px; }
+        .sidebar-nav { flex:1; overflow-y:auto; padding:8px; }
+        .sidebar-section { font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; padding:12px 8px 4px; letter-spacing:0.5px; }
+        .sidebar-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:var(--radius-sm); cursor:pointer; font-size:13px; margin-bottom:2px; }
+        .sidebar-item:hover { background:#e1dfdd; }
+        .sidebar-item.active { background:#d0d0d0; font-weight:600; }
+        .sidebar-item .star { margin-left:auto; opacity:0; transition:opacity 0.1s; color:#f4b400; cursor:pointer; }
+        .sidebar-item:hover .star, .sidebar-item .star.fav { opacity:1; }
+        .sidebar-new-btn { display:flex; align-items:center; gap:8px; margin:8px; padding:8px; cursor:pointer; color:var(--accent); font-weight:500; border:none; background:transparent; border-radius:var(--radius-sm); width:calc(100% - 16px); }
+        .sidebar-new-btn:hover { background:var(--accent-light); }
+        /* Main */
+        .main-content { flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative; }
+        .top-bar { height:48px; border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 16px; gap:8px; background:white; }
+        .list-name-display { font-weight:600; font-size:16px; cursor:pointer; padding:4px 8px; border-radius:var(--radius-sm); }
+        .list-name-display:hover { background:#f0f0f0; }
+        .tab-bar { display:flex; margin-left:12px; }
+        .tab { padding:8px 14px; cursor:pointer; border-bottom:2px solid transparent; font-weight:500; color:var(--text-secondary); font-size:13px; }
+        .tab.active { border-bottom-color:var(--accent); color:var(--accent); font-weight:600; }
+        .actions-right { margin-left:auto; display:flex; gap:4px; align-items:center; }
+        .btn-icon { width:36px; height:36px; border:none; background:transparent; border-radius:var(--radius-sm); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--text-secondary); }
+        .btn-icon:hover { background:#e1dfdd; }
+        .command-bar { height:40px; border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 8px; gap:2px; background:white; overflow-x:auto; }
+        .cmd-btn { padding:5px 10px; cursor:pointer; border:none; background:transparent; border-radius:var(--radius-sm); font-size:13px; display:flex; align-items:center; gap:4px; color:var(--text-primary); white-space:nowrap; }
+        .cmd-btn:hover { background:#e1dfdd; }
+        .cmd-sep { width:1px; height:20px; background:var(--border); margin:0 4px; }
+        .grid-container { flex:1; overflow:auto; background:white; }
+        table { border-collapse:collapse; width:max-content; min-width:100%; table-layout:fixed; }
+        th { background:#faf9f8; border-bottom:2px solid #e1dfdd; border-right:1px solid #e8e6e3; padding:0; font-weight:600; font-size:13px; color:var(--text-secondary); position:sticky; top:0; z-index:3; white-space:nowrap; }
+        th .th-inner { display:flex; align-items:center; padding:6px 10px; height:36px; gap:4px; cursor:pointer; }
+        th .th-inner:hover { background:#f0f0f0; }
+        th .col-icon { font-size:14px; opacity:0.7; }
+        th .col-name { flex:1; overflow:hidden; text-overflow:ellipsis; }
+        th .col-menu-btn { cursor:pointer; padding:2px 4px; border-radius:2px; opacity:0; transition:opacity 0.1s; }
+        th:hover .col-menu-btn { opacity:1; }
+        th .resize-handle { position:absolute; right:0; top:0; bottom:0; width:5px; cursor:col-resize; z-index:2; }
+        td { border-bottom:1px solid #e1dfdd; border-right:1px solid #e8e6e3; padding:6px 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; height:38px; }
+        tr:hover td { background:#f5f5f5; }
+        tr.selected td { background:#edebe9; }
+        td.editing { padding:0; }
+        td.editing input, td.editing select { width:100%; height:100%; border:2px solid var(--accent); border-radius:2px; font-family:inherit; font-size:13px; padding:4px 8px; outline:none; background:white; }
+        .gallery-container { display:none; flex:1; overflow:auto; padding:16px; flex-wrap:wrap; gap:12px; background:#faf9f8; align-content:flex-start; }
+        .gallery-container.active { display:flex; }
+        .gallery-card { width:240px; background:white; border:1px solid #e1dfdd; border-radius:var(--radius-md); padding:14px; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+        .gallery-card:hover { box-shadow:0 4px 8px rgba(0,0,0,0.08); }
+        .gallery-card.selected { border-color:var(--accent); }
+        th.drag-over { background:#e1dfdd; }
+        th.dragging { opacity:0.5; }
+        /* Panel */
+        .panel-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:50; display:none; }
+        .panel-overlay.show { display:block; }
+        .panel { position:fixed; top:0; right:-500px; width:var(--panel-width); height:100vh; background:white; box-shadow:-8px 0 32px rgba(0,0,0,0.15); z-index:60; transition:right 0.25s; display:flex; flex-direction:column; }
+        .panel.open { right:0; }
+        .panel-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+        .panel-header h3 { font-size:16px; font-weight:600; }
+        .panel-close { background:none; border:none; font-size:18px; cursor:pointer; }
+        .panel-close:hover { background:#e1dfdd; }
+        .panel-body { flex:1; overflow-y:auto; padding:20px; }
+        .panel-footer { padding:12px 20px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; }
+        .form-group { margin-bottom:12px; }
+        .form-group label { display:block; font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:4px; }
+        .form-group input, .form-group select, .form-group textarea { width:100%; padding:6px 10px; border:1px solid #8a8886; border-radius:var(--radius-sm); font-size:14px; }
+        .btn-primary { background:var(--accent); color:white; border:none; padding:6px 16px; border-radius:var(--radius-sm); font-weight:600; cursor:pointer; }
+        .btn-primary:hover { background:var(--accent-hover); }
+        .btn-secondary { background:white; border:1px solid var(--border); padding:6px 16px; border-radius:var(--radius-sm); cursor:pointer; }
+        .chip-container { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+        .chip { padding:4px 8px; border-radius:12px; font-size:13px; display:flex; align-items:center; gap:4px; color:white; }
+        .chip .chip-remove { cursor:pointer; font-size:14px; }
+        .chip-add { display:flex; gap:6px; margin-top:4px; align-items:center; }
+        .chip-add input { flex:1; }
+        .color-options { display:flex; gap:6px; margin-right:8px; }
+        .color-dot { width:24px; height:24px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
+        .color-dot.active { border-color:var(--text-primary); }
+        .ctx-menu { position:fixed; background:white; border:1px solid #e1dfdd; border-radius:var(--radius-md); box-shadow:0 4px 12px rgba(0,0,0,0.12); z-index:150; min-width:200px; padding:4px 0; display:none; }
+        .ctx-menu .ctx-item { padding:8px 12px; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+        .ctx-menu .ctx-item:hover { background:#f5f5f5; }
+        .toast-container { position:fixed; bottom:20px; right:20px; z-index:200; display:flex; flex-direction:column; gap:8px; }
+        .toast { background:#323130; color:white; padding:12px 20px; border-radius:var(--radius-md); animation:slideIn 0.3s; }
+        @keyframes slideIn { from{transform:translateX(100px);opacity:0;} }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header"><div class="sidebar-logo">📋</div><div class="sidebar-title">Lists</div></div>
+        <nav class="sidebar-nav" id="sidebarNav"></nav>
+        <button class="sidebar-new-btn" onclick="createNewList()">➕ Buat List Baru</button>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="top-bar">
+            <span class="list-name-display" id="listNameDisplay" onclick="renameList()">Daftar Tugas</span>
+            <div class="tab-bar">
+                <div class="tab active" data-view="grid" onclick="switchView('grid')">📊 Grid</div>
+                <div class="tab" data-view="gallery" onclick="switchView('gallery')">🖼️ Galeri</div>
+            </div>
+            <div class="actions-right">
+                <button class="btn-icon" onclick="shareList()" title="Bagikan">🔗</button>
+                <button class="btn-icon" onclick="exportCSV()" title="Ekspor">📥</button>
+            </div>
+        </div>
+        <div class="command-bar">
+            <button class="cmd-btn" onclick="addNewItem()">➕ Item Baru</button><span class="cmd-sep"></span>
+            <button class="cmd-btn" onclick="editSelectedItem()">✏️ Edit</button>
+            <button class="cmd-btn" onclick="deleteSelectedItems()">🗑️ Hapus</button><span class="cmd-sep"></span>
+            <button class="cmd-btn" onclick="openAddColumnPanel()">📌 Tambah Kolom</button>
+            <button class="cmd-btn" onclick="openFilterPanel()">🔍 Filter</button>
+        </div>
+        <div class="grid-container" id="gridContainer">
+            <table id="gridTable"><thead id="gridHead"></thead><tbody id="gridBody"></tbody></table>
+        </div>
+        <div class="gallery-container" id="galleryContainer"></div>
+    </main>
+
+    <!-- Panel Overlay -->
+    <div class="panel-overlay" id="panelOverlay" onclick="closePanel()"></div>
+
+    <!-- Column Panel -->
+    <div class="panel" id="columnPanel">
+        <div class="panel-header"><h3 id="columnPanelTitle">Tambah Kolom</h3><button class="panel-close" onclick="closePanel()">✕</button></div>
+        <div class="panel-body">
+            <input type="hidden" id="editColId">
+            <div class="form-group"><label>Nama Kolom</label><input type="text" id="colName" placeholder="Nama kolom"></div>
+            <div class="form-group"><label>Tipe</label><select id="colType" onchange="updateColTypeOptions()">
+                <option value="text">Teks</option><option value="multiline">Multiline</option><option value="number">Angka</option>
+                <option value="choice">Pilihan</option><option value="date">Tanggal</option><option value="yesno">Ya/Tidak</option>
+                <option value="person">Orang</option><option value="hyperlink">Hyperlink</option>
+            </select></div>
+            <div id="choicesContainer" style="display:none;">
+                <div class="form-group"><label>Pilihan</label>
+                    <div class="chip-container" id="choicesChipContainer"></div>
+                    <div class="chip-add">
+                        <input type="text" id="newChoiceInput" placeholder="Opsi">
+                        <div class="color-options">
+                            <span class="color-dot active" style="background:#0078d4" data-color="#0078d4"></span>
+                            <span class="color-dot" style="background:#0b6a0b" data-color="#0b6a0b"></span>
+                            <span class="color-dot" style="background:#d13438" data-color="#d13438"></span>
+                            <span class="color-dot" style="background:#f4b400" data-color="#f4b400"></span>
+                            <span class="color-dot" style="background:#6b2fa0" data-color="#6b2fa0"></span>
+                            <span class="color-dot" style="background:#605e5c" data-color="#605e5c"></span>
+                        </div>
+                        <button class="btn-secondary" onclick="addChoiceChip()">Tambah</button>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group"><label>Lebar (px)</label><input type="number" id="colWidth" value="180" min="60"></div>
+        </div>
+        <div class="panel-footer"><button class="btn-secondary" onclick="closePanel()">Batal</button><button class="btn-primary" id="saveColumnBtn">Simpan</button></div>
+    </div>
+
+    <!-- Item Panel -->
+    <div class="panel" id="itemPanel">
+        <div class="panel-header"><h3 id="itemPanelTitle">Tambah Item</h3><button class="panel-close" onclick="closePanel()">✕</button></div>
+        <div class="panel-body" id="itemFormBody"></div>
+        <div class="panel-footer"><button class="btn-secondary" onclick="closePanel()">Batal</button><button class="btn-primary" id="saveItemBtn">Simpan</button></div>
+    </div>
+
+    <!-- Filter Panel -->
+    <div class="panel" id="filterPanel">
+        <div class="panel-header"><h3>Filter & Urutkan</h3><button class="panel-close" onclick="closeFilterPanel()">✕</button></div>
+        <div class="panel-body">
+            <div class="form-group"><label>Urutkan Kolom</label><select id="sortColSelect" onchange="applySort()"></select></div>
+            <div class="form-group"><label>Arah</label><select id="sortDirSelect" onchange="applySort()"><option value="asc">A → Z</option><option value="desc">Z → A</option></select></div>
+            <div class="form-group"><label>Cari Teks</label><input type="text" id="searchInput" placeholder="Ketik..." oninput="applyFilter()"></div>
+        </div>
+        <div class="panel-footer"><button class="btn-secondary" onclick="clearFilters()">Reset</button></div>
+    </div>
+
+    <div class="ctx-menu" id="ctxMenu"></div>
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBwVp9B32z2BJTI76nAUOjYfFcNuraHUr8",
+            authDomain: "mslists-clone.firebaseapp.com",
+            projectId: "mslists-clone",
+            storageBucket: "mslists-clone.firebasestorage.app",
+            messagingSenderId: "847404593830",
+            appId: "1:847404593830:web:f16e2c774ab73427543a67"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let currentListId = null, currentList = null, selectedItems = new Set();
+        let currentView = 'grid', allLists = [], unsubscribe = null;
+        let currentSortCol = null, currentSortDir = 'asc', currentSearch = '';
+        let editingCell = null;
+        let currentChoices = [], selectedChoiceColor = '#0078d4';
+
+        const $ = id => document.getElementById(id);
+        function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+        async function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const listId = urlParams.get('list');
+            await loadAllLists();
+            if (listId) await openList(listId);
+            else {
+                const last = localStorage.getItem('ms_last');
+                if (last && allLists.some(l => l.id === last)) await openList(last);
+                else if (allLists.length) await openList(allLists[0].id);
+                else await createDefaultList();
+            }
+            document.addEventListener('click', globalClick);
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.addEventListener('keydown', handleGlobalKeyDown);
+            $('saveColumnBtn').addEventListener('click', saveColumn);
+            $('newChoiceInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addChoiceChip(); } });
+            document.querySelectorAll('.color-dot').forEach(dot => {
+                dot.addEventListener('click', function() {
+                    document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+                    this.classList.add('active');
+                    selectedChoiceColor = this.dataset.color;
+                });
+            });
+        }
+
+        async function loadAllLists() { const snap = await db.collection('lists').get(); allLists = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderSidebar(); }
+        function renderSidebar() {
+            const nav = $('sidebarNav');
+            const favLists = allLists.filter(l => l.favorite);
+            nav.innerHTML = `
+                <div class="sidebar-section">⭐ Favorit</div>
+                ${favLists.length === 0 ? '<div class="sidebar-item" style="color:gray;">-</div>' : favLists.map(l => sidebarItemHTML(l)).join('')}
+                <div class="sidebar-section">📁 Semua List</div>
+                ${allLists.filter(l => !l.favorite).map(l => sidebarItemHTML(l)).join('')}
+            `;
+        }
+        function sidebarItemHTML(l) {
+            return `<div class="sidebar-item ${l.id === currentListId ? 'active' : ''}" onclick="openList('${l.id}')">
+                📋 ${esc(l.name)}
+                <span class="star ${l.favorite ? 'fav' : ''}" onclick="event.stopPropagation();toggleFavorite('${l.id}')">⭐</span>
+                <span onclick="event.stopPropagation();deleteList('${l.id}')" style="margin-left:4px;color:#d13438;cursor:pointer;font-size:12px;">🗑️</span>
+            </div>`;
+        }
+        async function toggleFavorite(listId) { const list = allLists.find(l => l.id === listId); if (list) { list.favorite = !list.favorite; await db.collection('lists').doc(listId).update({ favorite: list.favorite }); renderSidebar(); } }
+        async function deleteList(listId) {
+            if (!confirm('Hapus list?')) return;
+            if (listId === currentListId) { if (unsubscribe) unsubscribe(); currentList = null; currentListId = null; localStorage.removeItem('ms_last'); window.history.replaceState({}, '', '/'); }
+            await db.collection('lists').doc(listId).delete();
+            await loadAllLists();
+            if (!currentListId && allLists.length > 0) await openList(allLists[0].id);
+            else if (!currentListId) await createDefaultList();
+        }
+        async function openList(listId) {
+            if (unsubscribe) unsubscribe();
+            currentListId = listId; localStorage.setItem('ms_last', listId);
+            window.history.replaceState({}, '', `?list=${listId}`);
+            unsubscribe = db.collection('lists').doc(listId).onSnapshot(doc => {
+                if (doc.exists) {
+                    currentList = { id: doc.id, ...doc.data() };
+                    if (!editingCell) { renderAll(); renderSidebar(); }
+                } else { alert('List dihapus'); location.href = '/'; }
+            });
+            selectedItems.clear(); currentSortCol = null; currentSearch = '';
+            renderAll(); renderSidebar();
+        }
+        async function createDefaultList() {
+            const ref = await db.collection('lists').add({
+                name: 'Daftar Tugas', favorite: false,
+                columns: [
+                    { id: 'col-1', name: 'Judul', type: 'text', width: 200 },
+                    { id: 'col-2', name: 'Status', type: 'choice', width: 150, choices: [{ label: 'Belum', color: '#d13438' }, { label: 'Proses', color: '#f4b400' }, { label: 'Selesai', color: '#0b6a0b' }] },
+                    { id: 'col-3', name: 'Selesai?', type: 'yesno', width: 100 },
+                    { id: 'col-4', name: 'Tenggat', type: 'date', width: 140 }
+                ],
+                items: []
+            });
+            await loadAllLists(); await openList(ref.id);
+        }
+        async function createNewList() { const name = prompt('Nama list baru:'); if (!name) return; const ref = await db.collection('lists').add({ name, favorite: false, columns: [{ id: 'col-1', name: 'Judul', type: 'text', width: 200 }], items: [] }); await loadAllLists(); await openList(ref.id); }
+        async function renameList() { const n = prompt('Nama baru:', currentList.name); if (n) await db.collection('lists').doc(currentListId).update({ name: n.trim() }); }
+
+        function getCols() { return currentList?.columns || []; }
+        function getItems() {
+            let items = currentList?.items || [];
+            if (currentSearch) { const s = currentSearch.toLowerCase(); items = items.filter(i => getCols().some(c => String(i[c.id] || '').toLowerCase().includes(s))); }
+            if (currentSortCol) {
+                const col = getCols().find(c => c.id === currentSortCol);
+                items = [...items].sort((a, b) => {
+                    let va = a[currentSortCol] ?? '', vb = b[currentSortCol] ?? '';
+                    if (col?.type === 'number') { va = +va; vb = +vb; }
+                    else if (col?.type === 'date') { va = new Date(va).getTime() || 0; vb = new Date(vb).getTime() || 0; }
+                    else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+                    return (va < vb ? -1 : 1) * (currentSortDir === 'asc' ? 1 : -1);
+                });
+            }
+            return items;
+        }
+
+        function renderAll() {
+            if (!currentList || editingCell) return;
+            $('listNameDisplay').textContent = currentList.name;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab[data-view="${currentView}"]`).classList.add('active');
+            $('gridContainer').style.display = currentView === 'grid' ? '' : 'none';
+            $('galleryContainer').classList.toggle('active', currentView === 'gallery');
+            if (currentView === 'grid') renderGrid();
+            else renderGallery();
+        }
+
+        function renderGrid() {
+            const cols = getCols(), items = getItems();
+            $('gridHead').innerHTML = `<tr>
+                <th style="width:40px;"><input type="checkbox" onchange="toggleAll(this)"></th>
+                <th style="width:40px;text-align:center;">#</th>
+                ${cols.map((c, idx) => `<th draggable="true" data-col-index="${idx}" style="width:${c.width||150}px;position:relative;" ondragstart="handleDragStart(event,${idx})" ondragover="handleDragOver(event,${idx})" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event,${idx})" ondragend="handleDragEnd()"><div class="th-inner" onclick="sortBy('${c.id}')"><span class="col-icon">${typeIcon(c.type)}</span><span class="col-name">${esc(c.name)}</span><span class="col-menu-btn" onclick="event.stopPropagation();showCtxMenu(event,'${c.id}')">▾</span></div><div class="resize-handle" onmousedown="startResize(event,'${c.id}')"></div></th>`).join('')}
+                <th style="width:48px;text-align:center;cursor:pointer;" onclick="openAddColumnPanel()">➕</th>
+            </tr>`;
+            $('gridBody').innerHTML = items.length === 0
+                ? `<tr><td colspan="${cols.length+3}" style="text-align:center;padding:40px;">Klik "Item Baru"</td></tr>`
+                : items.map((item, idx) => `<tr class="${selectedItems.has(item.id)?'selected':''}" data-item-id="${item.id}" onclick="handleRowClick(event,'${item.id}')"><td><input type="checkbox" ${selectedItems.has(item.id)?'checked':''} onclick="event.stopPropagation();toggleSelect('${item.id}',this.checked)"></td><td style="text-align:center;color:gray;">${idx+1}</td>${cols.map(c => `<td data-item-id="${item.id}" data-col-id="${c.id}" onclick="startEditingCell(this,'${item.id}','${c.id}')">${formatCell(c, item[c.id])}</td>`).join('')}</tr>`).join('');
+        }
+
+        function renderGallery() {
+            const cols = getCols(), items = getItems();
+            $('galleryContainer').innerHTML = items.map(item => `<div class="gallery-card ${selectedItems.has(item.id)?'selected':''}" onclick="selectRow(event,'${item.id}')"><strong>${esc(String(item[cols[0]?.id]||''))}</strong><div style="font-size:12px;color:gray;">${cols.slice(1).map(c => `${c.name}: ${formatCell(c, item[c.id])}`).join(' · ')}</div></div>`).join('');
+        }
+
+        function formatCell(col, val) {
+            if (val === undefined || val === null || val === '') return '<span style="color:#aaa;">Kosong</span>';
+            if (col.type === 'choice') { const color = getChoiceColor(col, val); return `<span style="background:${color};color:white;padding:2px 8px;border-radius:10px;">${esc(String(val))}</span>`; }
+            if (col.type === 'yesno') return val ? '<span style="background:#0b6a0b;color:white;padding:2px 8px;border-radius:10px;">✅ Ya</span>' : '<span style="background:#d13438;color:white;padding:2px 8px;border-radius:10px;">❌ Tidak</span>';
+            if (col.type === 'hyperlink') return `<a href="${esc(String(val))}" target="_blank">🔗</a>`;
+            if (col.type === 'date') { try { return new Date(val).toLocaleDateString('id-ID'); } catch { return esc(String(val)); } }
+            return esc(String(val));
+        }
+        function getChoiceColor(col, label) { if (!col?.choices) return '#0078d4'; const f = col.choices.find(c => c.label === label); return f ? f.color : '#0078d4'; }
+        function typeIcon(t) { return { text:'🔤', multiline:'📝', number:'🔢', choice:'🏷️', date:'📅', yesno:'☑️', person:'👤', hyperlink:'🔗' }[t] || '📄'; }
+
+        // Inline edit
+        function startEditingCell(td, itemId, colId) {
+            if (editingCell) { if (editingCell.td === td) return; saveEditingCell(); }
+            const item = getItems().find(i => i.id === itemId); if (!item) return;
+            const col = getCols().find(c => c.id === colId); if (!col) return;
+            const oldValue = item[colId];
+            td.classList.add('editing');
+            let inputHTML;
+            if (col.type === 'choice') inputHTML = `<select class="edit-input">${(col.choices||[]).map(o => `<option value="${esc(o.label)}" ${oldValue===o.label?'selected':''}>${esc(o.label)}</option>`)}</select>`;
+            else if (col.type === 'yesno') inputHTML = `<select class="edit-input"><option value="true" ${oldValue?'selected':''}>Ya</option><option value="false" ${!oldValue?'selected':''}>Tidak</option></select>`;
+            else inputHTML = `<input class="edit-input" value="${esc(String(oldValue||''))}">`;
+            td.innerHTML = inputHTML;
+            const input = td.querySelector('.edit-input'); input.focus();
+            if (col.type !== 'choice' && col.type !== 'yesno') input.select();
+            editingCell = { itemId, colId, td, col, oldValue };
+            if (col.type === 'choice' || col.type === 'yesno') input.addEventListener('change', () => saveEditingCell());
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); saveEditingCell(); moveToNextRow(); }
+                else if (e.key === 'Tab') { e.preventDefault(); saveEditingCell(); moveToNextCell(); }
+                else if (e.key === 'Escape') cancelEditing();
+            });
+        }
+        function saveEditingCell() {
+            if (!editingCell) return;
+            const { itemId, colId, td, col } = editingCell;
+            const input = td.querySelector('.edit-input'); if (!input) { editingCell = null; return; }
+            let newVal = input.value; if (col.type === 'yesno') newVal = newVal === 'true';
+            currentList.items = getItems().map(i => i.id === itemId ? { ...i, [colId]: newVal } : i);
+            updateList({ items: currentList.items });
+            td.classList.remove('editing');
+            td.innerHTML = formatCell(col, newVal);
+            editingCell = null;
+        }
+        function cancelEditing() { if (!editingCell) return; const { td, col, oldValue } = editingCell; td.classList.remove('editing'); td.innerHTML = formatCell(col, oldValue); editingCell = null; }
+        function moveToNextRow() { /* ... */ }
+        function moveToNextCell() { /* ... */ }
+
+        // Item CRUD
+        function addNewItem() { const empty = { id: 'i'+Date.now() }; getCols().forEach(c => { empty[c.id] = c.type==='yesno'?false:''; }); openItemPanel(null, empty); }
+        function editSelectedItem() { if (selectedItems.size !== 1) { showToast('Pilih satu item'); return; } const item = getItems().find(i => i.id === [...selectedItems][0]); if (item) openItemPanel(item.id, item); }
+        function deleteSelectedItems() { if (selectedItems.size === 0) return; if (!confirm(`Hapus ${selectedItems.size} item?`)) return; currentList.items = getItems().filter(i => !selectedItems.has(i.id)); selectedItems.clear(); updateList({ items: currentList.items }); }
+        function openItemPanel(editId, data) {
+            const cols = getCols(), isEdit = !!editId;
+            $('itemPanelTitle').textContent = isEdit ? 'Edit Item' : 'Tambah Item';
+            $('itemFormBody').innerHTML = cols.map(c => {
+                const val = data[c.id] ?? '';
+                let input;
+                if (c.type === 'choice') input = `<select id="fi-${c.id}">${(c.choices||[]).map(o => `<option value="${esc(o.label)}" ${val===o.label?'selected':''}>${esc(o.label)}</option>`)}</select>`;
+                else if (c.type === 'yesno') input = `<select id="fi-${c.id}"><option value="true" ${val?'selected':''}>Ya</option><option value="false" ${!val?'selected':''}>Tidak</option></select>`;
+                else if (c.type === 'date') input = `<input type="date" id="fi-${c.id}" value="${val}">`;
+                else input = `<input id="fi-${c.id}" value="${esc(String(val))}">`;
+                return `<div class="form-group"><label>${esc(c.name)}</label>${input}</div>`;
+            }).join('');
+            $('saveItemBtn').onclick = async () => {
+                const newItem = { ...data };
+                cols.forEach(c => { const el = $('fi-'+c.id); newItem[c.id] = c.type==='yesno' ? el.value==='true' : el.value; });
+                if (isEdit) currentList.items = getItems().map(i => i.id === editId ? newItem : i);
+                else currentList.items = [...getItems(), newItem];
+                await updateList({ items: currentList.items });
+                closePanel();
+                showToast(isEdit ? 'Item diperbarui' : 'Item ditambahkan');
+            };
+            openPanel($('itemPanel'));
+        }
+
+        // Columns
+        function openAddColumnPanel() {
+            $('columnPanelTitle').textContent = 'Tambah Kolom'; $('editColId').value = '';
+            $('colName').value = ''; $('colType').value = 'text'; $('colWidth').value = 180;
+            currentChoices = []; selectedChoiceColor = '#0078d4';
+            document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+            document.querySelector('.color-dot[data-color="#0078d4"]')?.classList.add('active');
+            renderChoicesChips(); updateColTypeOptions();
+            openPanel($('columnPanel'));
+        }
+        function updateColTypeOptions() { $('choicesContainer').style.display = $('colType').value === 'choice' ? '' : 'none'; }
+        function renderChoicesChips() { $('choicesChipContainer').innerHTML = currentChoices.map((c,i) => `<span class="chip" style="background:${c.color}">${esc(c.label)}<span class="chip-remove" onclick="removeChoiceChip(${i})">✕</span></span>`).join(''); }
+        function addChoiceChip() { const label = $('newChoiceInput').value.trim(); if (!label || currentChoices.some(c => c.label === label)) return; currentChoices.push({ label, color: selectedChoiceColor }); renderChoicesChips(); $('newChoiceInput').value=''; $('newChoiceInput').focus(); }
+        function removeChoiceChip(i) { currentChoices.splice(i,1); renderChoicesChips(); }
+        async function saveColumn() {
+            const id = $('editColId').value, name = $('colName').value.trim();
+            if (!name) return;
+            const type = $('colType').value, width = parseInt($('colWidth').value) || 180;
+            const col = { name, type, width };
+            if (type === 'choice') { if (currentChoices.length === 0) { showToast('Tambahkan pilihan'); return; } col.choices = currentChoices; }
+            let cols;
+            if (id) cols = getCols().map(c => c.id === id ? { ...c, ...col } : c);
+            else cols = [...getCols(), { id: 'c'+Date.now(), ...col }];
+            await updateList({ columns: cols });
+            closePanel();
+            showToast(id ? 'Kolom diperbarui' : 'Kolom ditambahkan');
+        }
+
+        // Filter
+        function openFilterPanel() {
+            const cols = getCols();
+            $('sortColSelect').innerHTML = '<option value="">-- Tidak diurutkan --</option>' + cols.map(c => `<option value="${c.id}" ${c.id===currentSortCol?'selected':''}>${esc(c.name)}</option>`).join('');
+            $('sortDirSelect').value = currentSortDir; $('searchInput').value = currentSearch;
+            openPanel($('filterPanel'));
+        }
+        function applySort() { currentSortCol = $('sortColSelect').value || null; currentSortDir = $('sortDirSelect').value; if (!editingCell) renderAll(); }
+        function applyFilter() { currentSearch = $('searchInput').value; if (!editingCell) renderAll(); }
+        function clearFilters() { currentSortCol=null; currentSortDir='asc'; currentSearch=''; $('searchInput').value=''; $('sortColSelect').value=''; renderAll(); closePanel(); }
+        function closeFilterPanel() { $('filterPanel').classList.remove('open'); $('panelOverlay').classList.remove('show'); }
+
+        // Drag & Resize
+        let draggedColIndex = null;
+        function handleDragStart(e, idx) { draggedColIndex = idx; e.dataTransfer.effectAllowed = 'move'; e.target.closest('th').classList.add('dragging'); }
+        function handleDragOver(e, idx) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (draggedColIndex !== idx) e.target.closest('th').classList.add('drag-over'); }
+        function handleDragLeave(e) { e.target.closest('th').classList.remove('drag-over'); }
+        async function handleDrop(e, targetIdx) {
+            e.preventDefault();
+            document.querySelectorAll('th.drag-over').forEach(th => th.classList.remove('drag-over'));
+            if (draggedColIndex === null || draggedColIndex === targetIdx) return;
+            const cols = [...getCols()]; const [moved] = cols.splice(draggedColIndex, 1); cols.splice(targetIdx, 0, moved);
+            await updateList({ columns: cols }); draggedColIndex = null;
+        }
+        function handleDragEnd() { document.querySelectorAll('th.dragging').forEach(th => th.classList.remove('dragging')); }
+
+        let isResizing = false, resizeColId = null, resizeStartX = 0, startWidth = 0;
+        function startResize(e, colId) { isResizing=true; resizeColId=colId; resizeStartX=e.clientX; const col=getCols().find(c=>c.id===colId); startWidth=col?.width||150; document.body.style.cursor='col-resize'; document.body.style.userSelect='none'; }
+        function handleMouseMove(e) { if (!isResizing) return; const w=Math.max(60, startWidth + e.clientX - resizeStartX); const col=getCols().find(c=>c.id===resizeColId); if(col){col.width=w; renderGrid();} }
+        function handleMouseUp() { if (isResizing) { isResizing=false; resizeColId=null; document.body.style.cursor=''; document.body.style.userSelect=''; if(currentList) updateList({ columns: getCols() }); } }
+
+        // Utility
+        function openPanel(panel) { document.querySelectorAll('.panel').forEach(p => p.classList.remove('open')); panel.classList.add('open'); $('panelOverlay').classList.add('show'); }
+        function closePanel() { document.querySelectorAll('.panel').forEach(p => p.classList.remove('open')); $('panelOverlay').classList.remove('show'); }
+        function shareList() { navigator.clipboard.writeText(`${location.origin}${location.pathname}?list=${currentListId}`); showToast('🔗 Link disalin!'); }
+        function exportCSV() {
+            const cols = getCols(), items = getItems();
+            let csv = '\uFEFF' + cols.map(c => c.name).join(',') + '\n';
+            items.forEach(i => csv += cols.map(c => `"${String(i[c.id]||'').replace(/"/g,'""')}"`).join(',') + '\n');
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv])); a.download = (currentList.name||'list')+'.csv'; a.click();
+        }
+        function switchView(v) { currentView = v; renderAll(); }
+        async function updateList(data) { await db.collection('lists').doc(currentListId).update(data); }
+        function showToast(msg) { const t = document.createElement('div'); t.className='toast'; t.textContent=msg; $('toastContainer').appendChild(t); setTimeout(()=>t.remove(),2500); }
+        function handleRowClick(e, itemId) { if (e.target.tagName === 'TD' && e.target.dataset.itemId) { e.stopPropagation(); return; } if (e.ctrlKey || e.metaKey) toggleSelect(itemId, !selectedItems.has(itemId)); else { selectedItems.clear(); selectedItems.add(itemId); renderAll(); } }
+        function toggleAll(cb) { getItems().forEach(i => cb.checked ? selectedItems.add(i.id) : selectedItems.delete(i.id)); renderAll(); }
+        function toggleSelect(id, checked) { checked ? selectedItems.add(id) : selectedItems.delete(id); renderAll(); }
+        function selectRow(e, itemId) { if (e.target.tagName === 'INPUT') return; if (e.ctrlKey || e.metaKey) toggleSelect(itemId, !selectedItems.has(itemId)); else { selectedItems.clear(); selectedItems.add(itemId); renderAll(); } }
+        function globalClick(e) { if (editingCell && !editingCell.td.contains(e.target)) saveEditingCell(); hideCtxMenu(); }
+        function handleGlobalKeyDown(e) { if (e.key === 'Escape' && editingCell) cancelEditing(); }
+        function hideCtxMenu() { $('ctxMenu').style.display = 'none'; }
+        function showCtxMenu(e, colId) { e.stopPropagation(); const menu = $('ctxMenu'); menu.innerHTML = `<div class="ctx-item" onclick="sortBy('${colId}','asc');hideCtxMenu()">Urutkan A→Z</div><div class="ctx-item" onclick="sortBy('${colId}','desc');hideCtxMenu()">Urutkan Z→A</div><div class="ctx-item" onclick="hideColumn('${colId}')">Sembunyikan</div><div class="ctx-item" onclick="deleteColumn('${colId}')">Hapus Kolom</div>`; menu.style.display='block'; menu.style.left=Math.min(e.clientX, innerWidth-220)+'px'; menu.style.top=e.clientY+'px'; }
+        function sortBy(colId, dir) { currentSortCol = colId; currentSortDir = dir || (currentSortDir==='asc'?'desc':'asc'); if (!editingCell) renderAll(); }
+        async function hideColumn(colId) { await updateList({ columns: getCols().filter(c => c.id !== colId) }); }
+        async function deleteColumn(colId) { if (!confirm('Hapus kolom?')) return; await updateList({ columns: getCols().filter(c => c.id !== colId) }); }
+
+        init();
+    </script>
+</body>
+</html>
